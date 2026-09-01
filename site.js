@@ -163,6 +163,18 @@ function sourceFormat(source) {
   return match ? match[1].toUpperCase() : "Unknown";
 }
 
+function codecFromContentType(contentType) {
+  const match = contentType?.match(/codecs\s*=\s*"?([^";]+)"?/i);
+  if (!match) return "Unavailable from delivery";
+  const codec = match[1].split(",")[0].trim().toLowerCase();
+  const labels = {
+    avc1: "H.264", avc3: "H.264", hvc1: "H.265 / HEVC", hev1: "H.265 / HEVC",
+    vp09: "VP9", vp9: "VP9", av01: "AV1", theora: "Theora",
+  };
+  const family = Object.keys(labels).find((key) => codec.startsWith(key));
+  return family ? `${labels[family]} (${codec})` : codec.toUpperCase();
+}
+
 function inspectorMarkup(selected) {
   return `
     <aside class="inspector" aria-label="Video Inspector">
@@ -171,7 +183,7 @@ function inspectorMarkup(selected) {
         <div><dt>Size</dt><dd id="video-size">Loading…</dd></div>
         <div><dt>Dimensions</dt><dd id="video-dimensions">Loading…</dd></div>
         <div><dt>Duration</dt><dd id="video-duration">Loading…</dd></div>
-        <div><dt>Codec</dt><dd>Unavailable client-side</dd></div>
+        <div><dt>Codec</dt><dd id="video-codec">Loading…</dd></div>
         <div><dt>Format</dt><dd id="video-format">${sourceFormat(selected.source)}</dd></div>
       </dl>
     </aside>
@@ -184,15 +196,21 @@ function loadOriginalMetadata(selected) {
   document.querySelector("#video-dimensions").textContent = "Loading…";
   document.querySelector("#video-duration").textContent = "Loading…";
   document.querySelector("#video-format").textContent = sourceFormat(selected.source);
+  document.querySelector("#video-codec").textContent = "Loading…";
   metadataProbe.onloadedmetadata = () => {
     document.querySelector("#video-dimensions").textContent = `${metadataProbe.videoWidth} × ${metadataProbe.videoHeight}`;
     document.querySelector("#video-duration").textContent = `${metadataProbe.duration.toFixed(1)} seconds`;
   };
   metadataProbe.src = selected.source;
   fetch(selected.source, { method: "HEAD" })
-    .then((response) => response.headers.get("content-length"))
-    .then((length) => { document.querySelector("#video-size").textContent = length ? formatBytes(Number(length)) : "Available on delivery"; })
-    .catch(() => { document.querySelector("#video-size").textContent = "Available on delivery"; });
+    .then((response) => {
+      document.querySelector("#video-size").textContent = response.headers.get("content-length") ? formatBytes(Number(response.headers.get("content-length"))) : "Available on delivery";
+      document.querySelector("#video-codec").textContent = codecFromContentType(response.headers.get("content-type"));
+    })
+    .catch(() => {
+      document.querySelector("#video-size").textContent = "Available on delivery";
+      document.querySelector("#video-codec").textContent = "Unavailable from delivery";
+    });
 }
 
 function mediaStatsMarkup(prefix) {
@@ -200,13 +218,13 @@ function mediaStatsMarkup(prefix) {
     <dl class="media-stats">
       <div><dt>Size</dt><dd id="${prefix}-size">Loading…</dd></div>
       <div><dt>Duration</dt><dd id="${prefix}-duration">Loading…</dd></div>
-      <div><dt>Codec</dt><dd>Unavailable client-side</dd></div>
+      <div><dt>Codec</dt><dd id="${prefix}-codec">Loading…</dd></div>
       <div><dt>Format</dt><dd id="${prefix}-format">Loading…</dd></div>
     </dl>
   `;
 }
 
-function loadPlayerStats(player, url, prefix) {
+function loadPlayerStats(player, url, prefix, forcedCodec = null) {
   const requestId = String(Number(player.dataset.statsRequestId || 0) + 1);
   player.dataset.statsRequestId = requestId;
   const isCurrentRequest = () => player.dataset.statsRequestId === requestId;
@@ -215,6 +233,7 @@ function loadPlayerStats(player, url, prefix) {
   set("size", "Loading…");
   set("duration", "Loading…");
   set("format", "Loading…");
+  set("codec", "Loading…");
   const updateDuration = () => {
     if (isCurrentRequest() && player.currentSrc === resolvedUrl && Number.isFinite(player.duration)) {
       set("duration", `${player.duration.toFixed(1)} seconds`);
@@ -232,6 +251,7 @@ function loadPlayerStats(player, url, prefix) {
       const type = response.headers.get("content-type");
       if (!isCurrentRequest()) return;
       set("format", type?.split("/")[1]?.split(";")[0]?.toUpperCase() || sourceFormat(url));
+      set("codec", forcedCodec || codecFromContentType(type));
       if (!length) {
         set("size", "Calculating…");
         return new Promise((resolve) => window.setTimeout(resolve, 800));
@@ -249,18 +269,21 @@ function loadPlayerStats(player, url, prefix) {
       if (!isCurrentRequest()) return;
       set("size", "Unavailable");
       set("format", sourceFormat(url));
+      set("codec", forcedCodec || "Unavailable from delivery");
     });
 }
 
 function transformationUrl(source, values) {
   const parts = [];
   if (values.duration) parts.push(`du_${values.duration}`);
-  if (values.autoFormat) parts.push("f_auto");
-  if (values.autoOptimize) parts.push("q_auto");
   if (values.fillWidth && values.fillHeight) parts.push(`c_fill,w_${values.fillWidth},h_${values.fillHeight}`);
   else if (values.fillWidth) parts.push(`c_scale,w_${values.fillWidth}`);
   else if (values.fillHeight) parts.push(`c_scale,h_${values.fillHeight}`);
-  return parts.length ? source.replace("/upload/", `/upload/${parts.join(",")}/`) : source;
+  if (values.codec === "h265") parts.push("vc_h265", "f_mp4");
+  else if (values.codec === "av1") parts.push("vc_av1", "f_mp4");
+  else if (values.autoFormat) parts.push("f_auto:video");
+  if (values.autoOptimize) parts.push("q_auto");
+  return parts.length ? source.replace("/upload/", `/upload/${parts.join("/")}/`) : source;
 }
 
 function deliveryUrl(source, components) {
@@ -345,6 +368,8 @@ function renderTransform() {
         <form id="transform-controls" class="transform-controls">
           <label class="switch-control"><span>Auto Format</span><input type="checkbox" name="autoFormat"><i></i></label>
           <label class="switch-control"><span>Auto Optimize</span><input type="checkbox" name="autoOptimize"><i></i></label>
+          <label class="switch-control"><span>Codec H.265</span><input type="checkbox" name="codecH265"><i></i></label>
+          <label class="switch-control"><span>Codec AV1</span><input type="checkbox" name="codecAv1"><i></i></label>
           <label class="field-control"><span>Fill Crop Width</span><input type="number" name="fillWidth" min="1" step="1" placeholder="Pixels"></label>
           <label class="field-control"><span>Fill Crop Height</span><input type="number" name="fillHeight" min="1" step="1" placeholder="Pixels"></label>
           <label class="field-control"><span>Duration</span><input type="number" name="duration" min="0.1" step="0.1" placeholder="Seconds"></label>
@@ -359,19 +384,33 @@ function renderTransform() {
   loadPlayerStats(sourcePlayer, selected.source, "source");
   loadPlayerStats(transformedPlayer, selected.source, "transformed");
 
-  document.querySelector("#transform-controls").addEventListener("submit", (event) => {
+  const transformControls = document.querySelector("#transform-controls");
+  const autoFormatControl = transformControls.elements.autoFormat;
+  const codecControls = [transformControls.elements.codecH265, transformControls.elements.codecAv1];
+  autoFormatControl.addEventListener("change", () => {
+    if (autoFormatControl.checked) codecControls.forEach((control) => { control.checked = false; });
+  });
+  codecControls.forEach((control) => control.addEventListener("change", () => {
+    if (!control.checked) return;
+    autoFormatControl.checked = false;
+    codecControls.forEach((otherControl) => { if (otherControl !== control) otherControl.checked = false; });
+  }));
+
+  transformControls.addEventListener("submit", (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const codec = form.get("codecH265") === "on" ? "h265" : form.get("codecAv1") === "on" ? "av1" : null;
     const nextUrl = transformationUrl(selected.source, {
       autoFormat: form.get("autoFormat") === "on",
       autoOptimize: form.get("autoOptimize") === "on",
+      codec,
       duration: form.get("duration"),
       fillWidth: form.get("fillWidth"),
       fillHeight: form.get("fillHeight"),
     });
     transformedUrlLink.href = nextUrl;
     transformedUrlLink.textContent = nextUrl;
-    loadPlayerStats(transformedPlayer, nextUrl, "transformed");
+    loadPlayerStats(transformedPlayer, nextUrl, "transformed", codec === "h265" ? "H.265 / HEVC (forced)" : codec === "av1" ? "AV1 (forced)" : null);
     transformedPlayer.play().catch(() => {});
   });
 }
