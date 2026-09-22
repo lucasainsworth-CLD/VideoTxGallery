@@ -49,12 +49,12 @@ function resolveGalleryVideos(config) {
 const videos = resolveGalleryVideos(decodeGalleryConfig(window.location.hash));
 
 const pages = {
-  videos: { label: "VIDEO LIBRARY", title: "Videos", intro: "Choose a source video." },
-  transform: { label: "TRANSFORMATION", title: "Transform", intro: "A simple URL change transforms the video on the fly." },
-  showcase: { label: "SOME TRANSFORMATION EXAMPLES", title: "Showcase", intro: "A small sample of transformations you can mix and match." },
-  layer: { label: "NAMED TRANSFORMATIONS", title: "Layer", intro: "Stack transformations and give a name to combinations." },
-  scale: { label: "TRANSFORMATIONS AT SCALE", title: "Scale", intro: "Apply a named transformation across a whole library of assets. Set it once, apply everywhere." },
-  settings: { label: "GALLERY SETUP", title: "Settings", intro: "Replace the source clips and create a shareable customized gallery link." },
+  videos: { title: "Video Library", intro: "Select a source video and view attributes in the video inspector." },
+  transform: { title: "Transform Video", intro: "Edit and transform videos on-the-fly." },
+  showcase: { title: "Transformation Showcase", intro: "Choose from over 80 transformations to create an unlimited number of video variants." },
+  layer: { title: "Combined Transformations", intro: "Save different transformation combinations as presets that can be applied to any video." },
+  scale: { title: "Scale Across Your Video Library", intro: "Apply named transformation to an unlimited number of videos to scale content operations." },
+  settings: { title: "Settings", intro: "Replace the source clips and create a shareable customized gallery link." },
 };
 
 function transformedUrl(source, width = PLAYER_WIDTH) {
@@ -73,17 +73,18 @@ function selectVideo(id) {
 const pageKey = document.body.dataset.page;
 const page = pages[pageKey] || pages.videos;
 const activeConfigHash = window.location.hash;
+const tabLabels = { videos: "Video", transform: "Transform", showcase: "Showcase", layer: "Layer", scale: "Scale" };
 const nav = Object.entries(pages)
   .filter(([key]) => key !== "settings")
-  .map(([key, value]) => `<a class="tab ${key === pageKey ? "is-active" : ""}" href="${key === "videos" ? "videos.html" : `${key}.html`}${activeConfigHash}">${value.title}</a>`)
+  .map(([key]) => `<a class="tab ${key === pageKey ? "is-active" : ""}" href="${key === "videos" ? "videos.html" : `${key}.html`}${activeConfigHash}">${tabLabels[key]}</a>`)
   .join("");
 
 document.body.innerHTML = `
   <div class="gallery-shell">
     <header class="site-header">
       <div class="title-bar">
-        <p class="site-title">Cloudinary Video Transformation Gallery</p>
         <img class="brand-logo" src="https://res.cloudinary.com/demohost/image/upload/v1787762370/Cloudinary_Video_Logo_Lock_Up_white_text.png" alt="Cloudinary Video">
+        <p class="site-title">Scale-high Performing Video with AI-Powered Automation</p>
       </div>
       <div class="nav-bar">
         <nav class="tabs" aria-label="Transformation gallery">${nav}</nav>
@@ -91,7 +92,6 @@ document.body.innerHTML = `
       </div>
     </header>
     <main class="page-content">
-      <p class="section-kicker">${page.label}</p>
       <h1 class="page-heading">${page.title}</h1>
       <p class="intro">${page.intro}</p>
       <div id="page-experience"></div>
@@ -172,7 +172,7 @@ function codecFromContentType(contentType) {
     vp09: "VP9", vp9: "VP9", av01: "AV1", theora: "Theora",
   };
   const family = Object.keys(labels).find((key) => codec.startsWith(key));
-  return family ? `${labels[family]} (${codec})` : codec.toUpperCase();
+  return family ? labels[family] : codec.toUpperCase();
 }
 
 function inspectorMarkup(selected) {
@@ -181,7 +181,7 @@ function inspectorMarkup(selected) {
       <p class="inspector-kicker">VIDEO INSPECTOR</p>
       <dl>
         <div><dt>Size</dt><dd id="video-size">Loading…</dd></div>
-        <div><dt>Dimensions</dt><dd id="video-dimensions">Loading…</dd></div>
+        <div><dt>Resolution</dt><dd id="video-dimensions">Loading…</dd></div>
         <div><dt>Duration</dt><dd id="video-duration">Loading…</dd></div>
         <div><dt>Codec</dt><dd id="video-codec">Loading…</dd></div>
         <div><dt>Format</dt><dd id="video-format">${sourceFormat(selected.source)}</dd></div>
@@ -216,27 +216,59 @@ function loadOriginalMetadata(selected) {
 function mediaStatsMarkup(prefix) {
   return `
     <dl class="media-stats">
-      <div><dt>Size</dt><dd id="${prefix}-size">Loading…</dd></div>
-      <div><dt>Duration</dt><dd id="${prefix}-duration">Loading…</dd></div>
+      <div><dt>Size</dt><dd><span id="${prefix}-size">Loading…</span><span id="${prefix}-size-delta" class="size-delta" hidden></span></dd></div>
+      <div><dt>Duration</dt><dd><span id="${prefix}-duration">Loading…</span><span id="${prefix}-duration-delta" class="stat-delta" hidden></span></dd></div>
       <div><dt>Codec</dt><dd id="${prefix}-codec">Loading…</dd></div>
       <div><dt>Format</dt><dd id="${prefix}-format">Loading…</dd></div>
     </dl>
   `;
 }
 
-function loadPlayerStats(player, url, prefix, forcedCodec = null) {
+function loadPlayerStats(player, url, prefix, forcedCodec = null, showStatDelta = false, comparisonStats = null) {
   const requestId = String(Number(player.dataset.statsRequestId || 0) + 1);
   player.dataset.statsRequestId = requestId;
   const isCurrentRequest = () => player.dataset.statsRequestId === requestId;
   const resolvedUrl = new URL(url, window.location.href).href;
   const set = (field, value) => { document.querySelector(`#${prefix}-${field}`).textContent = value; };
+  const sizeDelta = document.querySelector(`#${prefix}-size-delta`);
+  const durationDelta = document.querySelector(`#${prefix}-duration-delta`);
+  const comparisonSize = Number(comparisonStats?.sizeBytes);
+  const comparisonDuration = Number(comparisonStats?.durationSeconds);
+  const setSize = (bytes) => {
+    if (!isCurrentRequest()) return;
+    set("size", formatBytes(bytes));
+    player.dataset.sizeBytes = String(bytes);
+    if (!showStatDelta || !Number.isFinite(comparisonSize) || comparisonSize <= 0 || bytes === comparisonSize) return;
+    const percentChange = Math.round(Math.abs((bytes - comparisonSize) / comparisonSize) * 100);
+    sizeDelta.hidden = false;
+    sizeDelta.textContent = `${bytes < comparisonSize ? "▼" : "▲"}${percentChange}%`;
+    sizeDelta.classList.toggle("is-smaller", bytes < comparisonSize);
+    sizeDelta.classList.toggle("is-larger", bytes > comparisonSize);
+  };
+  const setDuration = (seconds) => {
+    if (!isCurrentRequest()) return;
+    set("duration", `${seconds.toFixed(1)} seconds`);
+    player.dataset.durationSeconds = String(seconds);
+    if (!showStatDelta || !Number.isFinite(comparisonDuration) || comparisonDuration <= 0 || seconds === comparisonDuration) return;
+    const percentChange = Math.round(Math.abs((seconds - comparisonDuration) / comparisonDuration) * 100);
+    durationDelta.hidden = false;
+    durationDelta.textContent = `${seconds < comparisonDuration ? "▼" : "▲"}${percentChange}%`;
+    durationDelta.classList.toggle("is-smaller", seconds < comparisonDuration);
+    durationDelta.classList.toggle("is-larger", seconds > comparisonDuration);
+  };
   set("size", "Loading…");
+  sizeDelta.hidden = true;
+  sizeDelta.textContent = "";
+  sizeDelta.classList.remove("is-smaller", "is-larger");
   set("duration", "Loading…");
+  durationDelta.hidden = true;
+  durationDelta.textContent = "";
+  durationDelta.classList.remove("is-smaller", "is-larger");
   set("format", "Loading…");
   set("codec", "Loading…");
   const updateDuration = () => {
     if (isCurrentRequest() && player.currentSrc === resolvedUrl && Number.isFinite(player.duration)) {
-      set("duration", `${player.duration.toFixed(1)} seconds`);
+      setDuration(player.duration);
     }
   };
   player.onloadedmetadata = updateDuration;
@@ -256,13 +288,13 @@ function loadPlayerStats(player, url, prefix, forcedCodec = null) {
         set("size", "Calculating…");
         return new Promise((resolve) => window.setTimeout(resolve, 800));
       }
-      set("size", formatBytes(Number(length)));
+      setSize(Number(length));
       return null;
     })
     .then((needsBodySize) => {
       if (needsBodySize !== undefined || !isCurrentRequest()) return;
       return fetch(url).then((response) => response.blob()).then((body) => {
-        if (isCurrentRequest()) set("size", formatBytes(body.size));
+        setSize(body.size);
       });
     })
     .catch(() => {
@@ -299,7 +331,7 @@ function escapeHtml(value) {
 function defaultLayerPresets() {
   return Array.from({ length: 3 }, (_, index) => ({
     id: `layer-${index}`,
-    name: `Name ${index + 1}`,
+    name: `Preset ${index + 1}`,
     settings: {
       autoFormat: false,
       autoQuality: false,
@@ -318,7 +350,9 @@ function getLayerPresets() {
     if (Array.isArray(saved) && saved.length === 3) {
       return saved.map((preset, index) => ({
         ...preset,
-        name: preset.name === `Layer ${index + 1}` ? `Name ${index + 1}` : preset.name,
+        name: ["Layer", "Name"].some((legacyName) => preset.name === `${legacyName} ${index + 1}`)
+          ? `Preset ${index + 1}`
+          : preset.name,
       }));
     }
   } catch (_) {
@@ -333,10 +367,16 @@ function saveLayerPresets(presets) {
 
 function layerDeliveryUrl(source, settings) {
   const components = ["w_600"];
+  const graphicOverlay = btoa("https://res.cloudinary.com/dz6ajwh6k/image/upload/v1790033021/15_off_vgipd6.png")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
   if (settings.crop === "square") components.push("c_fill,g_auto,w_600,h_600");
   if (settings.crop === "banner") components.push("c_fill,g_auto,w_600,h_200");
-  if (settings.graphicOverlay) components.push("l_cloudinary_cloud_glyph_blue_png", "c_scale,fl_relative,w_0.22", "fl_layer_apply,g_north_east,x_20,y_20");
-  if (settings.textOverlay) components.push("l_text:Arial_56_bold:Layer%20Demo", "c_scale,fl_relative,w_0.7", "fl_layer_apply,g_south,y_28");
+  if (settings.graphicOverlay) components.push(`l_fetch:${graphicOverlay}`, "c_scale,fl_relative,w_0.44", "fl_layer_apply,g_north_east,x_20,y_20");
+  if (settings.textOverlay) components.push(
+    "b_rgb:e5e7eb99,l_text:Arial_56_bold:%C2%A0Spring%20Special%C2%A0",
+    "c_scale,fl_relative,w_0.7",
+    "fl_layer_apply,g_south,y_28",
+  );
   if (settings.speedAdjust) components.push("e_accelerate:-50");
   if (settings.fade) components.push("e_fade:1000", "e_fade:-1000");
   components.push("vc_auto");
@@ -370,8 +410,9 @@ function renderTransform() {
           <label class="switch-control"><span>Auto Optimize</span><input type="checkbox" name="autoOptimize"><i></i></label>
           <label class="switch-control"><span>Codec H.265</span><input type="checkbox" name="codecH265"><i></i></label>
           <label class="switch-control"><span>Codec AV1</span><input type="checkbox" name="codecAv1"><i></i></label>
-          <label class="field-control"><span>Fill Crop Width</span><input type="number" name="fillWidth" min="1" step="1" placeholder="Pixels"></label>
-          <label class="field-control"><span>Fill Crop Height</span><input type="number" name="fillHeight" min="1" step="1" placeholder="Pixels"></label>
+          <div class="control-divider" aria-hidden="true"></div>
+          <label class="field-control"><span>Crop Width</span><input type="number" name="fillWidth" min="1" step="1" placeholder="Pixels"></label>
+          <label class="field-control"><span>Crop Height</span><input type="number" name="fillHeight" min="1" step="1" placeholder="Pixels"></label>
           <label class="field-control"><span>Duration</span><input type="number" name="duration" min="0.1" step="0.1" placeholder="Seconds"></label>
           <button class="apply-button" type="submit">Apply</button>
         </form>
@@ -410,18 +451,31 @@ function renderTransform() {
     });
     transformedUrlLink.href = nextUrl;
     transformedUrlLink.textContent = nextUrl;
-    loadPlayerStats(transformedPlayer, nextUrl, "transformed", codec === "h265" ? "H.265 / HEVC (forced)" : codec === "av1" ? "AV1 (forced)" : null);
+    loadPlayerStats(
+      transformedPlayer,
+      nextUrl,
+      "transformed",
+      codec === "h265" ? "H.265 / HEVC (forced)" : codec === "av1" ? "AV1 (forced)" : null,
+      true,
+      {
+        sizeBytes: Number(sourcePlayer.dataset.sizeBytes),
+        durationSeconds: Number(sourcePlayer.dataset.durationSeconds),
+      },
+    );
     transformedPlayer.play().catch(() => {});
   });
 }
 
 function renderShowcase() {
   const selected = getSelectedVideo();
-  const heading = document.querySelector(".page-heading");
-  const intro = document.querySelector(".intro");
-  heading.classList.add("source-heading");
-  heading.innerHTML = `Source Video:<span>${selected.source}</span>`;
-  intro.textContent = " ";
+  const watermarkOverlay = btoa("https://res.cloudinary.com/dz6ajwh6k/image/upload/v1790008220/DraftOverlay_l1e1vv.png")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+  const imageOverlay = btoa("https://res.cloudinary.com/dz6ajwh6k/image/upload/v1790033021/15_off_vgipd6.png")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 
   const treatments = [
     { title: "Original", components: ["c_scale,w_700", "vc_auto", "f_auto:video", "q_auto"] },
@@ -429,7 +483,13 @@ function renderShowcase() {
     { title: "Blur pad to square", components: ["c_pad,b_blurred:400:15,w_600,h_600", "vc_auto", "f_auto:video", "q_auto"] },
     { title: "Text overlay", components: ["c_scale,w_700", "l_text:Arial_80_bold:Cloudinary%20Video", "c_scale,fl_relative,w_0.86", "fl_layer_apply,g_north,y_75", "vc_auto", "f_auto:video", "q_auto"] },
     { title: "Reverse", components: ["e_reverse", "c_scale,w_700", "vc_auto", "f_auto:video", "q_auto"] },
-    { title: "Image overlay", components: ["c_fill,g_auto,w_700,h_394", "l_cloudinary_cloud_glyph_blue_png", "c_scale,fl_relative,w_0.22", "fl_layer_apply,g_north_east,x_20,y_20", "vc_auto", "f_auto:video", "q_auto"] },
+    { title: "Image overlay", components: ["c_fill,g_auto,w_700,h_394", `l_fetch:${imageOverlay}`, "c_scale,fl_relative,w_0.44", "fl_layer_apply,g_north_east,x_20,y_20", "vc_auto", "f_auto:video", "q_auto"] },
+    { title: "Watermark", components: ["c_scale,w_700", `l_fetch:${watermarkOverlay}`, "c_scale,fl_relative,w_1.0", "fl_layer_apply,g_center", "vc_auto", "f_auto:video", "q_auto"] },
+    { title: "Vignette", components: ["c_scale,w_700", "e_vignette", "vc_auto", "f_auto:video", "q_auto"] },
+    { title: "e_Preview", components: ["e_preview", "c_scale,w_700", "vc_auto", "f_auto:video", "q_auto"] },
+    { title: "Round Corners", components: ["c_scale,w_700", "r_48", "vc_auto", "f_auto:video", "q_auto"] },
+    { title: "Border", components: ["c_scale,w_700", "bo_12px_solid_rgb:51d8ee", "vc_auto", "f_auto:video", "q_auto"] },
+    { title: "Customized", components: ["c_scale,w_700", "b_rgb:374151,co_rgb:51d8ee,l_text:Georgia_42_bold:%20Hi%20%23name%252C%250A%20you%20forgot%20this%21%20", "fl_layer_apply,g_north_west,x_40,y_40,fl_no_overflow", "vc_auto", "f_auto:video", "q_auto"] },
   ];
 
   document.querySelector("#page-experience").innerHTML = `
@@ -440,13 +500,19 @@ function renderShowcase() {
           <article class="showcase-card">
             <h2>${treatment.title}</h2>
             <div class="showcase-stage">
-              <video autoplay muted loop playsinline preload="metadata" src="${url}"></video>
+              <video autoplay muted loop playsinline preload="auto" src="${url}"></video>
             </div>
           </article>
         `;
       }).join("")}
     </section>
   `;
+
+  document.querySelectorAll(".showcase-stage video").forEach((video) => {
+    const startPlayback = () => video.play().catch(() => {});
+    video.addEventListener("canplay", startPlayback, { once: true });
+    startPlayback();
+  });
 }
 
 function layerSwitch(label, setting, checked) {
@@ -460,32 +526,28 @@ function cropSwitch(label, crop, checked) {
 function renderLayer() {
   const selected = getSelectedVideo();
   const presets = getLayerPresets();
-  const heading = document.querySelector(".page-heading");
-  const intro = document.querySelector(".intro");
-  heading.classList.add("source-heading");
-  heading.innerHTML = `Source Video:<span>${escapeHtml(selected.source)}</span>`;
-  intro.textContent = "Build three named transformation recipes, then reuse them on the Scale page.";
 
   document.querySelector("#page-experience").innerHTML = `
+    <p class="source-context">Source Video: <span>${escapeHtml(selected.source)}</span></p>
     <section class="layer-grid" aria-label="Named transformation recipes">
       ${presets.map((preset, index) => {
         const settings = preset.settings;
         return `
           <article class="layer-card" data-slot="${index}">
-            <label class="layer-name"><span>Name</span><input type="text" value="${escapeHtml(preset.name)}" maxlength="48" placeholder="Transformation name"></label>
+            <label class="layer-name"><span>Preset Name</span><input type="text" value="${escapeHtml(preset.name)}" maxlength="48" placeholder="Transformation name"></label>
             <div class="layer-switches">
               ${layerSwitch("Auto Format", "autoFormat", settings.autoFormat)}
               ${layerSwitch("Auto Quality", "autoQuality", settings.autoQuality)}
               ${layerSwitch("Graphic Overlay", "graphicOverlay", settings.graphicOverlay)}
               ${layerSwitch("Text Overlay", "textOverlay", settings.textOverlay)}
-              ${layerSwitch("Speed Adjust", "speedAdjust", settings.speedAdjust)}
+              ${layerSwitch("Slow-mo", "speedAdjust", settings.speedAdjust)}
               ${layerSwitch("Fade In / Out", "fade", settings.fade)}
               ${cropSwitch("Square Crop", "square", settings.crop === "square")}
-              ${cropSwitch("Banner Crop", "banner", settings.crop === "banner")}
+              ${cropSwitch("Header Banner Crop", "banner", settings.crop === "banner")}
             </div>
             <button class="layer-apply" type="button">Apply</button>
-            <a class="layer-url" target="_blank" rel="noreferrer"></a>
             <div class="layer-stage"><video autoplay muted loop playsinline preload="metadata"></video></div>
+            <a class="layer-url" target="_blank" rel="noreferrer">Video link</a>
           </article>
         `;
       }).join("")}
@@ -497,7 +559,7 @@ function renderLayer() {
     const link = card.querySelector(".layer-url");
     const player = card.querySelector("video");
     link.href = url;
-    link.textContent = url;
+    link.textContent = "Video link";
     player.src = url;
     player.load();
     player.play().catch(() => {});
@@ -513,7 +575,7 @@ function renderLayer() {
       });
     }));
     card.querySelector(".layer-apply").addEventListener("click", () => {
-      const name = card.querySelector(".layer-name input").value.trim() || `Name ${slot + 1}`;
+      const name = card.querySelector(".layer-name input").value.trim() || `Preset ${slot + 1}`;
       const crop = card.querySelector('[data-crop="square"]').checked ? "square" : card.querySelector('[data-crop="banner"]').checked ? "banner" : "none";
       const settings = Object.fromEntries(
         [...card.querySelectorAll("[data-setting]")].map((input) => [input.dataset.setting, input.checked]),
@@ -531,7 +593,7 @@ function renderScale() {
   const experience = document.querySelector("#page-experience");
   experience.innerHTML = `
     <section class="scale-toolbar">
-      <label><span>Named transformation</span><select id="scale-preset"><option value="none">None — original</option>${presets.map((preset, index) => `<option value="${index}">${escapeHtml(preset.name)}</option>`).join("")}</select></label>
+      <label><span>Preset</span><select id="scale-preset"><option value="none">None — original</option>${presets.map((preset, index) => `<option value="${index}">${escapeHtml(preset.name)}</option>`).join("")}</select></label>
     </section>
     <section id="scale-grid" class="scale-grid" aria-label="Transformation applied across nine videos"></section>
   `;
