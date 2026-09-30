@@ -224,7 +224,7 @@ function mediaStatsMarkup(prefix) {
   `;
 }
 
-function loadPlayerStats(player, url, prefix, forcedCodec = null, showStatDelta = false, comparisonStats = null) {
+function loadPlayerStats(player, url, prefix, forcedCodec = null, showStatDelta = false, comparisonStats = null, knownDurationSeconds = null) {
   const requestId = String(Number(player.dataset.statsRequestId || 0) + 1);
   player.dataset.statsRequestId = requestId;
   const isCurrentRequest = () => player.dataset.statsRequestId === requestId;
@@ -234,6 +234,8 @@ function loadPlayerStats(player, url, prefix, forcedCodec = null, showStatDelta 
   const durationDelta = document.querySelector(`#${prefix}-duration-delta`);
   const comparisonSize = Number(comparisonStats?.sizeBytes);
   const comparisonDuration = Number(comparisonStats?.durationSeconds);
+  const knownDuration = Number(knownDurationSeconds);
+  const hasKnownDuration = Number.isFinite(knownDuration) && knownDuration > 0;
   const setSize = (bytes) => {
     if (!isCurrentRequest()) return;
     set("size", formatBytes(bytes));
@@ -271,12 +273,19 @@ function loadPlayerStats(player, url, prefix, forcedCodec = null, showStatDelta 
       setDuration(player.duration);
     }
   };
-  player.onloadedmetadata = updateDuration;
-  player.ondurationchange = updateDuration;
-  player.oncanplay = updateDuration;
+  if (hasKnownDuration) {
+    player.onloadedmetadata = null;
+    player.ondurationchange = null;
+    player.oncanplay = null;
+    setDuration(knownDuration);
+  } else {
+    player.onloadedmetadata = updateDuration;
+    player.ondurationchange = updateDuration;
+    player.oncanplay = updateDuration;
+  }
   player.src = url;
   player.load();
-  [600, 1600, 3500, 6000].forEach((delay) => window.setTimeout(updateDuration, delay));
+  if (!hasKnownDuration) [600, 1600, 3500, 6000].forEach((delay) => window.setTimeout(updateDuration, delay));
   fetch(url, { method: "HEAD" })
     .then((response) => {
       const length = response.headers.get("content-length");
@@ -367,15 +376,15 @@ function saveLayerPresets(presets) {
 
 function layerDeliveryUrl(source, settings) {
   const components = ["w_600"];
-  const graphicOverlay = btoa("https://res.cloudinary.com/dz6ajwh6k/image/upload/v1790033021/15_off_vgipd6.png")
+  const graphicOverlay = btoa("https://res.cloudinary.com/dz6ajwh6k/image/upload/v1790731185/15_off_vgipd6.png")
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
   if (settings.crop === "square") components.push("c_fill,g_auto,w_600,h_600");
   if (settings.crop === "banner") components.push("c_fill,g_auto,w_600,h_200");
-  if (settings.graphicOverlay) components.push(`l_fetch:${graphicOverlay}`, "c_scale,fl_relative,w_0.44", "fl_layer_apply,g_north_east,x_20,y_20");
+  if (settings.graphicOverlay) components.push(`l_fetch:${graphicOverlay}`, "c_scale,fl_relative,w_0.44", "fl_layer_apply,g_east");
   if (settings.textOverlay) components.push(
     "b_rgb:e5e7eb99,l_text:Arial_56_bold:%C2%A0Spring%20Special%C2%A0",
     "c_scale,fl_relative,w_0.7",
-    "fl_layer_apply,g_south,y_28",
+    "fl_layer_apply,g_south_west",
   );
   if (settings.speedAdjust) components.push("e_accelerate:-50");
   if (settings.fade) components.push("e_fade:1000", "e_fade:-1000");
@@ -414,6 +423,7 @@ function renderTransform() {
           <label class="field-control"><span>Crop Width</span><input type="number" name="fillWidth" min="1" step="1" placeholder="Pixels"></label>
           <label class="field-control"><span>Crop Height</span><input type="number" name="fillHeight" min="1" step="1" placeholder="Pixels"></label>
           <label class="field-control"><span>Duration</span><input type="number" name="duration" min="0.1" step="0.1" placeholder="Seconds"></label>
+          <button class="reset-link" type="button">Reset</button>
           <button class="apply-button" type="submit">Apply</button>
         </form>
       </section>
@@ -437,10 +447,23 @@ function renderTransform() {
     codecControls.forEach((otherControl) => { if (otherControl !== control) otherControl.checked = false; });
   }));
 
+  transformControls.querySelector(".reset-link").addEventListener("click", () => {
+    transformControls.reset();
+    transformedUrlLink.href = selected.source;
+    transformedUrlLink.textContent = selected.source;
+    loadPlayerStats(transformedPlayer, selected.source, "transformed");
+    transformedPlayer.play().catch(() => {});
+  });
+
   transformControls.addEventListener("submit", (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const codec = form.get("codecH265") === "on" ? "h265" : form.get("codecAv1") === "on" ? "av1" : null;
+    const requestedDuration = Number(form.get("duration"));
+    const sourceDuration = Number(sourcePlayer.dataset.durationSeconds);
+    const knownDuration = requestedDuration > 0
+      ? (sourceDuration > 0 ? Math.min(requestedDuration, sourceDuration) : requestedDuration)
+      : (sourceDuration > 0 ? sourceDuration : null);
     const nextUrl = transformationUrl(selected.source, {
       autoFormat: form.get("autoFormat") === "on",
       autoOptimize: form.get("autoOptimize") === "on",
@@ -461,6 +484,7 @@ function renderTransform() {
         sizeBytes: Number(sourcePlayer.dataset.sizeBytes),
         durationSeconds: Number(sourcePlayer.dataset.durationSeconds),
       },
+      knownDuration,
     );
     transformedPlayer.play().catch(() => {});
   });
@@ -472,7 +496,7 @@ function renderShowcase() {
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/g, "");
-  const imageOverlay = btoa("https://res.cloudinary.com/dz6ajwh6k/image/upload/v1790033021/15_off_vgipd6.png")
+  const imageOverlay = btoa("https://res.cloudinary.com/dz6ajwh6k/image/upload/v1790731185/15_off_vgipd6.png")
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/g, "");
@@ -481,15 +505,15 @@ function renderShowcase() {
     { title: "Original", components: ["c_scale,w_700", "vc_auto", "f_auto:video", "q_auto"] },
     { title: "Auto-crop to 9:16", components: ["w_600", "c_fill,ar_9:16,g_auto", "vc_auto", "f_auto:video", "q_auto"] },
     { title: "Blur pad to square", components: ["c_pad,b_blurred:400:15,w_600,h_600", "vc_auto", "f_auto:video", "q_auto"] },
-    { title: "Text overlay", components: ["c_scale,w_700", "l_text:Arial_80_bold:Cloudinary%20Video", "c_scale,fl_relative,w_0.86", "fl_layer_apply,g_north,y_75", "vc_auto", "f_auto:video", "q_auto"] },
+    { title: "Text overlay", components: ["c_scale,w_700", "l_text:Montserrat@google_80_700:Cloudinary%20Video", "e_outline:1,co_rgb:e5e7eb", "c_scale,fl_relative,w_0.645", "fl_layer_apply,g_south_west,x_40,y_40", "vc_auto", "f_auto:video", "q_auto"] },
     { title: "Reverse", components: ["e_reverse", "c_scale,w_700", "vc_auto", "f_auto:video", "q_auto"] },
-    { title: "Image overlay", components: ["c_fill,g_auto,w_700,h_394", `l_fetch:${imageOverlay}`, "c_scale,fl_relative,w_0.44", "fl_layer_apply,g_north_east,x_20,y_20", "vc_auto", "f_auto:video", "q_auto"] },
+    { title: "Image overlay", components: ["c_fill,g_auto,w_700,h_394", `l_fetch:${imageOverlay}`, "c_scale,fl_relative,w_0.44", "fl_layer_apply,g_south_east,x_20,y_20", "vc_auto", "f_auto:video", "q_auto"] },
     { title: "Watermark", components: ["c_scale,w_700", `l_fetch:${watermarkOverlay}`, "c_scale,fl_relative,w_1.0", "fl_layer_apply,g_center", "vc_auto", "f_auto:video", "q_auto"] },
-    { title: "Vignette", components: ["c_scale,w_700", "e_vignette", "vc_auto", "f_auto:video", "q_auto"] },
-    { title: "e_Preview", components: ["e_preview", "c_scale,w_700", "vc_auto", "f_auto:video", "q_auto"] },
+    { title: "Progress bar", components: ["c_scale,w_700", "e_progressbar:bar:51d8ee:12", "vc_auto", "f_auto:video", "q_auto"] },
+    { title: "AI generated highlights (5 sec)", components: ["e_preview", "c_scale,w_700", "vc_auto", "f_auto:video", "q_auto"] },
     { title: "Round Corners", components: ["c_scale,w_700", "r_48", "vc_auto", "f_auto:video", "q_auto"] },
     { title: "Border", components: ["c_scale,w_700", "bo_12px_solid_rgb:51d8ee", "vc_auto", "f_auto:video", "q_auto"] },
-    { title: "Customized", components: ["c_scale,w_700", "b_rgb:374151,co_rgb:51d8ee,l_text:Georgia_42_bold:%20Hi%20%23name%252C%250A%20you%20forgot%20this%21%20", "fl_layer_apply,g_north_west,x_40,y_40,fl_no_overflow", "vc_auto", "f_auto:video", "q_auto"] },
+    { title: "Customized", components: ["c_scale,w_700", "b_rgb:374151,co_rgb:51d8ee,l_text:Georgia_42_bold:%20Hi%20%23name%252C%250A%20you%20forgot%20this%21%20", "fl_layer_apply,g_south_west,x_40,y_40,fl_no_overflow", "vc_auto", "f_auto:video", "q_auto"] },
   ];
 
   document.querySelector("#page-experience").innerHTML = `
@@ -528,7 +552,6 @@ function renderLayer() {
   const presets = getLayerPresets();
 
   document.querySelector("#page-experience").innerHTML = `
-    <p class="source-context">Source Video: <span>${escapeHtml(selected.source)}</span></p>
     <section class="layer-grid" aria-label="Named transformation recipes">
       ${presets.map((preset, index) => {
         const settings = preset.settings;
@@ -547,7 +570,9 @@ function renderLayer() {
             </div>
             <button class="layer-apply" type="button">Apply</button>
             <div class="layer-stage"><video autoplay muted loop playsinline preload="metadata"></video></div>
-            <a class="layer-url" target="_blank" rel="noreferrer">Video link</a>
+            <a class="layer-url" target="_blank" rel="noreferrer" aria-label="Open transformed video" title="Open transformed video">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" aria-hidden="true"><path d="M440-280H280q-83 0-141.5-58.5T80-480q0-83 58.5-141.5T280-680h160v80H280q-50 0-85 35t-35 85q0 50 35 85t85 35h160v80ZM320-440v-80h320v80H320Zm200 160v-80h160q50 0 85-35t35-85q0-50-35-85t-85-35H520v-80h160q83 0 141.5 58.5T880-480q0 83-58.5 141.5T680-280H520Z"/></svg>
+            </a>
           </article>
         `;
       }).join("")}
@@ -559,7 +584,6 @@ function renderLayer() {
     const link = card.querySelector(".layer-url");
     const player = card.querySelector("video");
     link.href = url;
-    link.textContent = "Video link";
     player.src = url;
     player.load();
     player.play().catch(() => {});
