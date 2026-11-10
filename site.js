@@ -376,7 +376,7 @@ function saveLayerPresets(presets) {
 
 function layerDeliveryUrl(source, settings) {
   const components = ["w_600"];
-  const graphicOverlay = btoa("https://res.cloudinary.com/dz6ajwh6k/image/upload/v1790731185/15_off_vgipd6.png")
+  const graphicOverlay = btoa("https://res.cloudinary.com/dz6ajwh6k/image/upload/v1794257602/discount_overlay1_qynvke.png")
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
   if (settings.crop === "square") components.push("c_fill,g_auto,w_600,h_600");
   if (settings.crop === "banner") components.push("c_fill,g_auto,w_600,h_200");
@@ -492,11 +492,11 @@ function renderTransform() {
 
 function renderShowcase() {
   const selected = getSelectedVideo();
-  const watermarkOverlay = btoa("https://res.cloudinary.com/dz6ajwh6k/image/upload/v1790008220/DraftOverlay_l1e1vv.png")
+  const watermarkOverlay = btoa("https://res.cloudinary.com/dz6ajwh6k/image/upload/v1794257603/Watermark_wlev6k.png")
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/g, "");
-  const imageOverlay = btoa("https://res.cloudinary.com/dz6ajwh6k/image/upload/v1790731185/15_off_vgipd6.png")
+  const imageOverlay = btoa("https://res.cloudinary.com/dz6ajwh6k/image/upload/v1794257602/discount_overlay1_qynvke.png")
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/g, "");
@@ -505,7 +505,7 @@ function renderShowcase() {
     { title: "Original", components: ["c_scale,w_700", "vc_auto", "f_auto:video", "q_auto"] },
     { title: "Auto-crop to 9:16", components: ["w_600", "c_fill,ar_9:16,g_auto", "vc_auto", "f_auto:video", "q_auto"] },
     { title: "Blur pad to square", components: ["c_pad,b_blurred:400:15,w_600,h_600", "vc_auto", "f_auto:video", "q_auto"] },
-    { title: "Text overlay", components: ["c_scale,w_700", "l_text:Montserrat@google_80_700:Cloudinary%20Video", "e_outline:1,co_rgb:e5e7eb", "c_scale,fl_relative,w_0.645", "fl_layer_apply,g_south_west,x_40,y_40", "vc_auto", "f_auto:video", "q_auto"] },
+    { title: "Text overlay", components: ["c_scale,w_700", "l_text:Montserrat@google_80_700:Cloudinary%20Video", "e_outline:3,co_rgb:e5e7eb", "c_scale,fl_relative,w_0.645", "fl_layer_apply,g_south_west,x_40,y_40", "vc_auto", "f_auto:video", "q_auto"] },
     { title: "Reverse", components: ["e_reverse", "c_scale,w_700", "vc_auto", "f_auto:video", "q_auto"] },
     { title: "Image overlay", components: ["c_fill,g_auto,w_700,h_394", `l_fetch:${imageOverlay}`, "c_scale,fl_relative,w_0.44", "fl_layer_apply,g_south_east,x_20,y_20", "vc_auto", "f_auto:video", "q_auto"] },
     { title: "Watermark", components: ["c_scale,w_700", `l_fetch:${watermarkOverlay}`, "c_scale,fl_relative,w_1.0", "fl_layer_apply,g_center", "vc_auto", "f_auto:video", "q_auto"] },
